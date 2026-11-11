@@ -121,7 +121,7 @@ const T=[["Autumn 1",[
 const S=[];let n=0;const sel=document.getElementById("step");
 T.forEach(([t,a])=>{const g=document.createElement("optgroup");g.label=t;a.forEach(([o,w])=>{n++;S.push({n,o,w:w.split(" ")});const e=document.createElement("option");e.value=n-1;e.textContent="Step "+n+" – "+o;g.appendChild(e)});sel.appendChild(g)});
 const $=i=>document.getElementById(i);
-const prev=()=>{$("preview").textContent=S[sel.value].w.join(", ")};sel.onchange=prev;prev();
+const prev=()=>{$("preview").textContent=S[sel.value].w.join(", ")};sel.onchange=()=>{prev();if(KS==="ready")prefetchAll()};prev();
 let q,goals,kicks,missed,cur,busy;
 const show=id=>["setup","game","end"].forEach(x=>$(x).classList.toggle("hide",x!==id));
 const shuf=a=>{a=a.slice();for(let k=a.length-1;k>0;k--){const j=Math.floor(Math.random()*(k+1));[a[k],a[j]]=[a[j],a[k]]}return a};
@@ -159,15 +159,21 @@ $("kb").innerHTML=["qwertyuiop","asdfghjkl","zxcvbnm⌫"].map(r=>'<div class="kr
 $("kb").addEventListener("pointerdown",e=>{const b=e.target.closest("button");if(b){e.preventDefault();key(b.dataset.k)}});
 let TTS=null,KS="idle",AC=null,ktok=0,cs=null;const KC={};
 function unlockA(){try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();AC.resume();const b=AC.createBuffer(1,1,22050),x=AC.createBufferSource();x.buffer=b;x.connect(AC.destination);x.start(0)}catch(e){}}
-async function initK(){if(KS!=="idle")return;KS="loading";const st=$("kst");st.textContent="Loading the natural voice… 0%";
-try{const m=await import("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");
-TTS=await m.KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX",{dtype:"q8",device:"wasm",progress_callback:p=>{if(p&&p.status==="progress"&&p.progress!=null)st.textContent="Loading the natural voice… "+Math.round(p.progress)+"%"}});
-KS="ready";st.textContent="Natural voice ready ✓"}catch(e){KS="failed";st.textContent="Natural voice unavailable, using your device voice instead."}}
+async function initK(){if(KS!=="idle")return;KS="loading";const st=$("kst");st.textContent="Loading the natural voice\u2026 0%";
+const prog=p=>{if(p&&p.status==="progress"&&p.progress!=null)st.textContent="Loading the natural voice\u2026 "+Math.round(p.progress)+"%"};
+try{const m=await import("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/dist/kokoro.web.js");const id="onnx-community/Kokoro-82M-v1.0-ONNX";
+if(navigator.gpu){try{TTS=await m.KokoroTTS.from_pretrained(id,{dtype:"fp32",device:"webgpu",progress_callback:prog});await TTS.generate("Ready.",{voice:$("kv").value})}catch(e){TTS=null}}
+if(!TTS)TTS=await m.KokoroTTS.from_pretrained(id,{dtype:"q8",device:"wasm",progress_callback:prog});
+KS="ready";st.textContent="Natural voice ready \u2713";prefetchAll()}catch(e){KS="failed";st.textContent="Natural voice unavailable, using your device voice instead."}}
+let pend=0,pft=0;
+async function prefetchAll(){const t=++pft,st=$("kst"),it=[];S[sel.value].w.forEach(w=>it.push([SAY[w]||w,.85]));"abcdefghijklmnopqrstuvwxyz".split("").forEach(c=>it.push([c.toUpperCase()+".",1.1]));
+for(let i=0;i<it.length;i++){if(t!==pft)return;while(pend>0)await new Promise(r=>setTimeout(r,150));if(t!==pft)return;st.textContent="Getting words ready\u2026 "+(i+1)+"/"+it.length;try{await kgen(it[i][0],it[i][1])}catch(e){}}
+if(t===pft)st.textContent="Natural voice ready \u2713"}
 function kgen(t,sp){const key=$("kv").value+"|"+sp+"|"+t;if(KC[key])return KC[key];const p=(async()=>{const a=await TTS.generate(t,{voice:$("kv").value,speed:sp});const b=AC.createBuffer(1,a.audio.length,a.sampling_rate);b.copyToChannel(a.audio,0);return b})();p.catch(()=>{delete KC[key]});KC[key]=p;return p}
-async function ksay(w,rate){const id=++ktok;try{if(cs){try{cs.stop()}catch(e){}cs=null}const sp=Math.min(1.1,Math.max(.6,rate||.85));const buf=await kgen(w,sp);if(id!==ktok)return;AC.resume();const x=AC.createBufferSource();x.buffer=buf;x.connect(AC.destination);x.start();cs=x}catch(e){speak(w,rate,true)}}
+async function ksay(w,rate){const id=++ktok;try{if(cs){try{cs.stop()}catch(e){}cs=null}const sp=Math.min(1.1,Math.max(.6,rate||.85));pend++;let buf;try{buf=await kgen(w,sp)}finally{pend--}if(id!==ktok)return;AC.resume();const x=AC.createBufferSource();x.buffer=buf;x.connect(AC.destination);x.start();cs=x}catch(e){speak(w,rate,true)}}
 function kpre(w){if(KS==="ready"&&AC)kgen(SAY[w]||w,.85).catch(()=>{})}
 const ksample=()=>{unlockA();initK();if(KS==="ready")speak("Let\u2019s score a goal!",.95)};
-$("ktest").onclick=ksample;$("kv").onchange=ksample;
+$("ktest").onclick=ksample;$("kv").onchange=()=>{ksample();if(KS==="ready")prefetchAll()};
 if("speechSynthesis" in window){loadVoices();speechSynthesis.onvoiceschanged=loadVoices;$("vsel").onchange=()=>{VOICE=VOICES[$("vsel").value];speak("Let’s score a goal!",.95)};$("vtest").onclick=()=>speak("Let’s score a goal!",.95)}
 </script>
 </body>
